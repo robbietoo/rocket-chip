@@ -75,8 +75,10 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
 
   val dtmInfo = Wire(new DTMInfo)
 
-  val busyReg = Reg(init = Bool(false))
-  val stickyBusyReg = Reg(init = Bool(false))
+  val busyNxt = Wire(init = Bool(false))
+  val busyReg = AsyncResetReg(busyNxt, name = "busyReg")
+  val stickyBusyNxt = Wire(init = Bool(false))
+  val stickyBusyReg = AsyncResetReg(stickyBusyNxt, name = "stickyBusyReg")
   val stickyNonzeroRespReg = Reg(init = Bool(false))
 
   val skipOpReg = Reg(init = Bool(false)) // Skip op because we're busy

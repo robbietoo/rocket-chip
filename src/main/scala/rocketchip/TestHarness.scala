@@ -92,11 +92,8 @@ class JTAGVPI(implicit val p: Parameters) extends BlackBox {
   def connect(dutio: JTAGIO, jtckPOReset: Bool, tbreset: Bool, tbsuccess: Bool) = {
     dutio <> io.jtag
 
-    // Note that this synchronization *should* be done in
-    // an actual SoC, not the testbench. It is not included
-    // within ExampleRocketChipTop.
-    dutio.TRSTn.foreach{ _:= true.B}
-    jtckPOReset := util.ResetCatchAndSync(dutio.TCK, tbreset)
+    dutio.TRSTn.foreach{ _:= ~tbreset}
+    jtckPOReset := tbreset
 
     io.enable    := ~tbreset
     io.init_done := ~tbreset
