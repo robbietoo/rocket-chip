@@ -35,7 +35,7 @@ trait HasL1HellaCacheParameters extends HasL1CacheParameters {
   val encDataBits = code.width(coreDataBits)
   val encRowBits = encDataBits*rowWords
   val nIOMSHRs = 1
-  val lrscCycles = 32 // ISA requires 16-insn LRSC sequences to succeed
+  val lrscCycles = 256 // ISA requires 16-insn LRSC sequences to succeed
 
   require(isPow2(nSets))
   require(rowBits <= outerDataBits)
