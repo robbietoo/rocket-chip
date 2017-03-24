@@ -22,8 +22,8 @@ trait PeripheryJTAGDTM extends HasTopLevelNetworks {
 trait PeripheryJTAGDTMBundle extends HasTopLevelNetworksBundle {
   val outer: PeripheryJTAGDTM
 
-  val jtag = new JTAGIO(hasTRSTn = true).flip
-  val jtckPOReset = Bool(INPUT)
+  val jtag = new JTAGIO(hasTRSTn = false).flip
+  val jtag_reset = Bool(INPUT)
 
 }
 
@@ -34,19 +34,13 @@ trait PeripheryJTAGDTMModule extends HasTopLevelNetworksModule {
   val dtm = Module (new DebugTransportModuleJTAG(p(DMKey).nDMIAddrSize, p(JtagDTMKey)))
   dtm.io.jtag <> io.jtag
   
-  dtm.clock := io.jtag.TCK
-  val tapReset = if (io.jtag.TRSTn.isDefined) {
-    io.jtckPOReset | (~io.jtag.TRSTn.get)
-  }
-  else {
-    io.jtckPOReset
-  }
-  dtm.io.jtckPOReset    := tapReset
+  dtm.clock             := io.jtag.TCK
+  dtm.io.jtag_reset     := io.jtag_reset
   dtm.reset             := dtm.io.fsmReset
 
   outer.coreplex.module.io.debug.dmi <> dtm.io.dmi
   outer.coreplex.module.io.debug.dmiClock := io.jtag.TCK
-  outer.coreplex.module.io.debug.dmiReset := tapReset
+  outer.coreplex.module.io.debug.dmiReset := ResetCatchAndSync(io.jtag.TCK, io.jtag_reset, "dmiResetCatch")
 
 }
 
@@ -83,8 +77,8 @@ trait PeripheryDebugBundle extends HasTopLevelNetworksBundle {
 
   val debug = (!p(IncludeJtagDTM)).option(new ClockedDMIIO().flip)
 
-  val jtag        = (p(IncludeJtagDTM)).option(new JTAGIO(hasTRSTn = true).flip)
-  val jtckPOReset = (p(IncludeJtagDTM)).option(Bool(INPUT))
+  val jtag        = (p(IncludeJtagDTM)).option(new JTAGIO(hasTRSTn = false).flip)
+  val jtag_reset  = (p(IncludeJtagDTM)).option(Bool(INPUT))
 
 }
 
@@ -96,21 +90,15 @@ trait PeripheryDebugModule extends HasTopLevelNetworksModule {
 
   val dtm = if (io.jtag.isDefined) Some[DebugTransportModuleJTAG](Module (new DebugTransportModuleJTAG(p(DMKey).nDMIAddrSize, p(JtagDTMKey)))) else None
   dtm.foreach { dtm =>
-
     dtm.io.jtag <> io.jtag.get
 
-    dtm.clock := io.jtag.get.TCK
-    val tapReset = if (io.jtag.get.TRSTn.isDefined) {
-      io.jtckPOReset.get | (~io.jtag.get.TRSTn.get)}
-    else {
-      io.jtckPOReset.get
-    }
-    dtm.io.jtckPOReset    := tapReset
-    dtm.reset             := dtm.io.fsmReset
+    dtm.clock          := io.jtag.get.TCK
+    dtm.io.jtag_reset  := io.jtag_reset.get
+    dtm.reset          := dtm.io.fsmReset
 
     outer.coreplex.module.io.debug.dmi <> dtm.io.dmi
     outer.coreplex.module.io.debug.dmiClock := io.jtag.get.TCK
-    outer.coreplex.module.io.debug.dmiReset := tapReset
+    outer.coreplex.module.io.debug.dmiReset := ResetCatchAndSync(io.jtag.get.TCK, io.jtag_reset.get, "dmiResetCatch")
   }
 }
 

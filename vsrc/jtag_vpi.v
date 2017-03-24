@@ -51,7 +51,6 @@ module JTAGVPI
 	input  jtag_TDO_data,
         input  jtag_TDO_driven,
  
-        output jtag_TRSTn, // unused
 	input  enable,
 	input  init_done);
 
@@ -64,8 +63,6 @@ module JTAGVPI
    assign jtag_TCK = tck;
    assign jtag_TDI = tdi;
    assign tdo = jtag_TDO_driven ? jtag_TDO_data : 1'bz;
-
-   assign jtag_TRSTn = 1'b1;
       
 integer		cmd;
 integer		length;

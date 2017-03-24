@@ -66,7 +66,7 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
   val io = new Bundle {
     val dmi = new DMIIO()(p)
     val jtag = Flipped(new JTAGIO(hasTRSTn = false))
-    val jtckPOReset = Bool(INPUT)
+    val jtag_reset = Bool(INPUT)
     val fsmReset = Bool(OUTPUT)
   }
 
@@ -75,11 +75,9 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
 
   val dtmInfo = Wire(new DTMInfo)
 
-  val busyNxt = Wire(init = Bool(false))
-  val busyReg = AsyncResetReg(busyNxt, name = "busyReg")
-  val stickyBusyNxt = Wire(init = Bool(false))
-  val stickyBusyReg = AsyncResetReg(stickyBusyNxt, name = "stickyBusyReg")
-  val stickyNonzeroRespReg = Reg(init = Bool(false))
+  val busyReg = RegInit(Bool(false))
+  val stickyBusyReg = RegInit(Bool(false))
+  val stickyNonzeroRespReg = RegInit(Bool(false))
 
   val skipOpReg = Reg(init = Bool(false)) // Skip op because we're busy
   val downgradeOpReg = Reg(init = Bool(false)) // downgrade op because prev. failed.
@@ -223,7 +221,7 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
 
   tapIO.jtag <> io.jtag
 
-  tapIO.control.jtckPOReset := io.jtckPOReset
+  tapIO.control.jtag_reset := io.jtag_reset
 
   //--------------------------------------------------------
   // Reset Generation (this is fed back to us by the instantiating module,

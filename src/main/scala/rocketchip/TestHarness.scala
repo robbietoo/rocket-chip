@@ -24,7 +24,7 @@ class TestHarness()(implicit p: Parameters) extends Module {
   if (!p(IncludeJtagDTM)) {
     val dtm = Module(new SimDTM).connect(clock, reset, dut.io.debug.get, io.success)
   } else {
-    val jtag = Module(new JTAGVPI).connect(dut.io.jtag.get, dut.io.jtckPOReset.get, reset, io.success)
+    val jtag = Module(new JTAGVPI).connect(dut.io.jtag.get, dut.io.jtag_reset.get, reset, io.success)
   }
 
   val mmio_sim = Module(LazyModule(new SimAXIMem(1, 4096)).module)
@@ -84,16 +84,16 @@ class SimDTM(implicit p: Parameters) extends BlackBox {
 
 class JTAGVPI(implicit val p: Parameters) extends BlackBox {
   val io = new Bundle {
-    val jtag = new JTAGIO(hasTRSTn = true)
+    val jtag = new JTAGIO(hasTRSTn = false)
     val enable = Bool(INPUT)
     val init_done = Bool(INPUT)
   }
 
-  def connect(dutio: JTAGIO, jtckPOReset: Bool, tbreset: Bool, tbsuccess: Bool) = {
+  def connect(dutio: JTAGIO, jtag_reset: Bool, tbreset: Bool, tbsuccess: Bool) = {
     dutio <> io.jtag
 
-    dutio.TRSTn.foreach{ _:= ~tbreset}
-    jtckPOReset := tbreset
+    dutio.TRSTn.foreach{ _:= false.B}
+    jtag_reset := tbreset
 
     io.enable    := ~tbreset
     io.init_done := ~tbreset
