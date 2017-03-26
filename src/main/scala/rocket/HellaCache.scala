@@ -19,7 +19,7 @@ case class DCacheParams(
     nSets: Int = 64,
     nWays: Int = 4,
     rowBits: Int = 64,
-    nTLBEntries: Int = 8,
+    nTLBEntries: Int = 32,
     splitMetadata: Boolean = false,
     ecc: Option[Code] = None,
     nMSHRs: Int = 1,
@@ -60,7 +60,6 @@ trait HasL1HellaCacheParameters extends HasL1CacheParameters with HasCoreParamet
   def encRowBits = encDataBits*rowWords
   def lrscCycles = 32 // ISA requires 16-insn LRSC sequences to succeed
   def nIOMSHRs = cacheParams.nMMIOs
-  def maxUncachedInFlight = cacheParams.nMMIOs
   def dataScratchpadSize = cacheParams.dataScratchpadBytes
 
   require(rowBits >= coreDataBits, s"rowBits($rowBits) < coreDataBits($coreDataBits)")

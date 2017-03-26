@@ -28,12 +28,12 @@ class FrontendResp(implicit p: Parameters) extends CoreBundle()(p) {
 
 class FrontendIO(implicit p: Parameters) extends CoreBundle()(p) {
   val req = Valid(new FrontendReq)
+  val sfence = Valid(new SFenceReq)
   val resp = Decoupled(new FrontendResp).flip
   val btb_update = Valid(new BTBUpdate)
   val bht_update = Valid(new BHTUpdate)
   val ras_update = Valid(new RASUpdate)
   val flush_icache = Bool(OUTPUT)
-  val flush_tlb = Bool(OUTPUT)
   val npc = UInt(INPUT, width = vaddrBitsExtended)
 
   // performance events
@@ -62,7 +62,7 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   implicit val edge = outer.node.edgesOut(0)
   val icache = outer.icache.module
 
-  val tlb = Module(new TLB(nTLBEntries))
+  val tlb = Module(new TLB(log2Ceil(coreInstBytes*fetchWidth), nTLBEntries))
 
   val s1_pc_ = Reg(UInt(width=vaddrBitsExtended))
   val s1_pc = ~(~s1_pc_ | (coreInstBytes-1)) // discard PC LSBS (this propagates down the pipeline)
@@ -72,7 +72,9 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   val s2_pc = Reg(init=io.resetVector)
   val s2_btb_resp_valid = Reg(init=Bool(false))
   val s2_btb_resp_bits = Reg(new BTBResp)
-  val s2_xcpt_if = Reg(init=Bool(false))
+  val s2_maybe_xcpt_if = Reg(init=Bool(false))
+  val s2_tlb_miss = Reg(Bool())
+  val s2_xcpt_if = s2_maybe_xcpt_if && !s2_tlb_miss
   val s2_speculative = Reg(init=Bool(false))
   val s2_cacheable = Reg(init=Bool(false))
 
@@ -99,7 +101,8 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
       s2_pc := s1_pc
       s2_speculative := s1_speculative
       s2_cacheable := tlb.io.resp.cacheable
-      s2_xcpt_if := tlb.io.resp.xcpt_if && !tlb.io.resp.miss
+      s2_maybe_xcpt_if := tlb.io.resp.xcpt_if
+      s2_tlb_miss := tlb.io.resp.miss
     }
   }
   when (io.cpu.req.valid) {
@@ -133,13 +136,15 @@ class FrontendModule(outer: Frontend) extends LazyModuleImp(outer)
   tlb.io.req.bits.passthrough := Bool(false)
   tlb.io.req.bits.instruction := Bool(true)
   tlb.io.req.bits.store := Bool(false)
+  tlb.io.req.bits.sfence := io.cpu.sfence
+  tlb.io.req.bits.size := log2Ceil(coreInstBytes*fetchWidth)
 
   icache.io.req.valid := !stall && !s0_same_block
   icache.io.req.bits.addr := io.cpu.npc
   icache.io.invalidate := io.cpu.flush_icache
   icache.io.s1_paddr := tlb.io.resp.paddr
-  icache.io.s1_kill := io.cpu.req.valid || tlb.io.resp.miss || tlb.io.resp.xcpt_if || icmiss || io.cpu.flush_tlb
-  icache.io.s2_kill := s2_speculative && !s2_cacheable
+  icache.io.s1_kill := io.cpu.req.valid || tlb.io.resp.miss || icmiss
+  icache.io.s2_kill := s2_speculative && !s2_cacheable || s2_xcpt_if
   icache.io.resp.ready := !stall && !s1_same_block
 
   io.cpu.resp.valid := s2_valid && (icache.io.resp.valid || icache.io.s2_kill || s2_xcpt_if)

@@ -680,8 +680,9 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   val s1_valid_masked = s1_valid && !io.cpu.s1_kill && !io.cpu.xcpt.asUInt.orR
   val s1_replay = Reg(init=Bool(false))
   val s1_clk_en = Reg(Bool())
+  val s1_sfence = s1_req.cmd === M_SFENCE
 
-  val s2_valid = Reg(next=s1_valid_masked, init=Bool(false))
+  val s2_valid = Reg(next=s1_valid_masked && !s1_sfence, init=Bool(false))
   val s2_req = Reg(io.cpu.req.bits)
   val s2_replay = Reg(next=s1_replay, init=Bool(false)) && s2_req.cmd =/= M_FLUSH_ALL
   val s2_recycle = Wire(Bool())
@@ -696,13 +697,18 @@ class NonBlockingDCacheModule(outer: NonBlockingDCache) extends HellaCacheModule
   val s1_write = isWrite(s1_req.cmd)
   val s1_readwrite = s1_read || s1_write || isPrefetch(s1_req.cmd)
 
-  val dtlb = Module(new TLB(nTLBEntries))
+  val dtlb = Module(new TLB(log2Ceil(coreDataBytes), nTLBEntries))
   io.ptw <> dtlb.io.ptw
-  dtlb.io.req.valid := s1_valid_masked && s1_readwrite
+  dtlb.io.req.valid := s1_valid && !io.cpu.s1_kill && (s1_readwrite || s1_sfence)
+  dtlb.io.req.bits.sfence.valid := s1_sfence
+  dtlb.io.req.bits.sfence.bits.rs1 := s1_req.typ(0)
+  dtlb.io.req.bits.sfence.bits.rs2 := s1_req.typ(1)
+  dtlb.io.req.bits.sfence.bits.asid := io.cpu.s1_data
   dtlb.io.req.bits.passthrough := s1_req.phys
   dtlb.io.req.bits.vaddr := s1_req.addr
   dtlb.io.req.bits.instruction := Bool(false)
   dtlb.io.req.bits.store := s1_write
+  dtlb.io.req.bits.size := s1_req.typ
   when (!dtlb.io.req.ready && !io.cpu.req.bits.phys) { io.cpu.req.ready := Bool(false) }
   
   when (io.cpu.req.valid) {

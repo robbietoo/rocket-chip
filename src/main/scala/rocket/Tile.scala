@@ -119,13 +119,15 @@ class RocketTileModule(outer: RocketTile) extends BaseTileModule(outer, () => ne
     with CanHaveLegacyRoccsModule
     with CanHaveScratchpadModule {
 
+  require(outer.p(PAddrBits) >= outer.masterNode.edgesIn(0).bundle.addressBits)
+
   val core = Module(p(BuildCore)(outer.p))
   core.io.hartid := io.hartid
   outer.frontend.module.io.cpu <> core.io.imem
   outer.frontend.module.io.resetVector := io.resetVector
   dcachePorts += core.io.dmem // TODO outer.dcachePorts += () => module.core.io.dmem ??
   fpuOpt foreach { fpu => core.io.fpu <> fpu.io }
-  ptwOpt foreach { ptw => core.io.ptw <> ptw.io.dpath }
+  core.io.ptw <> ptw.io.dpath
   outer.legacyRocc foreach { lr =>
     lr.module.io.core.cmd <> core.io.rocc.cmd
     lr.module.io.core.exception := core.io.rocc.exception
@@ -149,7 +151,7 @@ class RocketTileModule(outer: RocketTile) extends BaseTileModule(outer, () => ne
   require(h == o, s"port list size was $h, outer counted $o")
   // TODO figure out how to move the below into their respective mix-ins
   dcacheArb.io.requestor <> dcachePorts
-  ptwOpt foreach { ptw => ptw.io.requestor <> ptwPorts }
+  ptw.io.requestor <> ptwPorts
 }
 
 class SyncRocketTile(rtp: RocketTileParams, hartid: Int)(implicit p: Parameters) extends LazyModule {

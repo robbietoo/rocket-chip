@@ -7,37 +7,38 @@ import Chisel._
 import Chisel.ImplicitConversions._
 import config._
 import tile._
+import coreplex.CacheBlockBytes
 import uncore.constants._
+import uncore.tilelink2._
 import util._
 
 import scala.collection.mutable.ListBuffer
 
 class PTWReq(implicit p: Parameters) extends CoreBundle()(p) {
-  val prv = Bits(width = 2)
-  val pum = Bool()
-  val mxr = Bool()
   val addr = UInt(width = vpnBits)
-  val store = Bool()
-  val fetch = Bool()
 }
 
 class PTWResp(implicit p: Parameters) extends CoreBundle()(p) {
   val pte = new PTE
   val level = UInt(width = log2Ceil(pgLevels))
+  val homogeneous = Bool()
 }
 
-class TLBPTWIO(implicit p: Parameters) extends CoreBundle()(p) {
+class TLBPTWIO(implicit p: Parameters) extends CoreBundle()(p)
+    with HasRocketCoreParameters {
   val req = Decoupled(new PTWReq)
   val resp = Valid(new PTWResp).flip
   val ptbr = new PTBR().asInput
-  val invalidate = Bool(INPUT)
   val status = new MStatus().asInput
+  val pmp = Vec(nPMPs, new PMP).asInput
 }
 
-class DatapathPTWIO(implicit p: Parameters) extends CoreBundle()(p) {
+class DatapathPTWIO(implicit p: Parameters) extends CoreBundle()(p)
+    with HasRocketCoreParameters {
   val ptbr = new PTBR().asInput
   val invalidate = Bool(INPUT)
   val status = new MStatus().asInput
+  val pmp = Vec(nPMPs, new PMP).asInput
 }
 
 class PTE(implicit p: Parameters) extends CoreBundle()(p) {
@@ -62,7 +63,7 @@ class PTE(implicit p: Parameters) extends CoreBundle()(p) {
   def sx(dummy: Int = 0) = leaf() && x
 }
 
-class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
+class PTW(n: Int)(implicit edge: TLEdgeOut, p: Parameters) extends CoreModule()(p) {
   val io = new Bundle {
     val requestor = Vec(n, new TLBPTWIO).flip
     val mem = new HellaCacheIO
@@ -75,7 +76,8 @@ class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
   val state = Reg(init=s_ready)
   val count = Reg(UInt(width = log2Up(pgLevels)))
   val s1_kill = Reg(next = Bool(false))
-  val resp_valid = Reg(next = Bool(false))
+  val resp_valid = Reg(next = Vec.fill(io.requestor.size)(Bool(false)))
+  val exception = Reg(next = io.mem.xcpt.pf.ld)
 
   val r_req = Reg(new PTWReq)
   val r_req_dest = Reg(Bits())
@@ -132,14 +134,21 @@ class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
   io.mem.s1_kill := s1_kill
   io.mem.invalidate_lr := Bool(false)
   
+  val pmaPgLevelHomogeneous = (0 until pgLevels) map { i =>
+    TLBPageLookup(edge.manager.managers, xLen, p(CacheBlockBytes), BigInt(1) << (pgIdxBits + ((pgLevels - 1 - i) * pgLevelBits)))(pte_addr >> pgIdxBits << pgIdxBits).homogeneous
+  }
+  val pmaHomogeneous = pmaPgLevelHomogeneous(count)
+  val pmpHomogeneous = new PMPHomogeneityChecker(io.dpath.pmp).apply(pte_addr >> pgIdxBits << pgIdxBits, count)
+
   for (i <- 0 until io.requestor.size) {
-    io.requestor(i).resp.valid := resp_valid && (r_req_dest === i)
+    io.requestor(i).resp.valid := resp_valid(i)
     io.requestor(i).resp.bits.pte := r_pte
     io.requestor(i).resp.bits.level := count
     io.requestor(i).resp.bits.pte.ppn := pte_addr >> pgIdxBits
+    io.requestor(i).resp.bits.homogeneous := pmpHomogeneous && pmaHomogeneous
     io.requestor(i).ptbr := io.dpath.ptbr
-    io.requestor(i).invalidate := io.dpath.invalidate
     io.requestor(i).status := io.dpath.status
+    io.requestor(i).pmp := io.dpath.pmp
   }
 
   // control state machine
@@ -153,7 +162,6 @@ class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
     is (s_req) {
       when (pte_cache_hit) {
         s1_kill := true
-        state := s_req
         count := count + 1
         r_pte.ppn := pte_cache_data
       }.elsewhen (io.mem.req.ready) {
@@ -162,11 +170,6 @@ class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
     }
     is (s_wait1) {
       state := s_wait2
-      when (io.mem.xcpt.pf.ld) {
-        r_pte.v := false
-        state := s_ready
-        resp_valid := true
-      }
     }
     is (s_wait2) {
       when (io.mem.s2_nack) {
@@ -179,8 +182,13 @@ class PTW(n: Int)(implicit p: Parameters) extends CoreModule()(p) {
           count := count + 1
         }.otherwise {
           state := s_ready
-          resp_valid := true
+          resp_valid(r_req_dest) := true
         }
+      }
+      when (exception) {
+        r_pte.v := false
+        state := s_ready
+        resp_valid(r_req_dest) := true
       }
     }
   }
@@ -197,6 +205,7 @@ trait CanHavePTW extends HasHellaCache {
 trait CanHavePTWModule extends HasHellaCacheModule {
   val outer: CanHavePTW
   val ptwPorts = ListBuffer(outer.dcache.module.io.ptw)
-  val ptwOpt = if (outer.usingPTW) { Some(Module(new PTW(outer.nPTWPorts)(outer.p))) } else None
-  ptwOpt foreach { ptw => dcachePorts += ptw.io.mem }
+  val ptw = Module(new PTW(outer.nPTWPorts)(outer.dcache.node.edgesOut(0), outer.p))
+  if (outer.usingPTW)
+    dcachePorts += ptw.io.mem
 }
