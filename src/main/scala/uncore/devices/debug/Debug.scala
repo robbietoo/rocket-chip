@@ -55,6 +55,7 @@ object DsbRegAddrs{
   def GO           = 0x400
 
   def ROMBASE      = 0x800
+  def RESUME       = 0x804
 
   def WHERETO      = 0x300
   def ABSTRACT     = 0x340 - 8
@@ -204,6 +205,7 @@ class DMIIO(implicit val p: Parameters) extends ParameterizedBundle()(p) {
  */
 
 class DebugInternalBundle ()(implicit val p: Parameters) extends ParameterizedBundle()(p) {
+  val resumereq = Bool()
   val hartsel = UInt(10.W)
 }
 
@@ -377,6 +379,8 @@ class TLDebugModuleOuter(device: Device)(implicit p: Parameters) extends LazyMod
 
     // Halt request registers are written by write to DMCONTROL.haltreq
     // and cleared by writes to DMCONTROL.resumereq.
+    // resumereq also causes the core to execute a 'dret',
+    // so resumereq is passed through to Inner.
     // hartsel must also be used by the DebugModule state machine,
     // so it is passed to Inner.
     // It is true that there is no backpressure -- writes
@@ -397,6 +401,7 @@ class TLDebugModuleOuter(device: Device)(implicit p: Parameters) extends LazyMod
 
     io.innerCtrl.valid := DMCONTROLWrEn
     io.innerCtrl.bits.hartsel   := DMCONTROLWrData.hartsel
+    io.innerCtrl.bits.resumereq := DMCONTROLWrData.resumereq
 
     io.ctrl.ndreset := DMCONTROLReg.ndmreset
     io.ctrl.debugActive := DMCONTROLReg.dmactive
@@ -740,6 +745,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     //--------------------------------------------------------------
 
     val goProgramBuffer = Wire(init = false.B)
+    val goResume        = Wire(init = false.B)
     val goAbstract      = Wire(init = false.B)
 
     val whereToReg = RegInit(0.U(32.W))
@@ -752,14 +758,20 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     jalAbstract.setImm(ABSTRACT - WHERETO)
     jalProgBuf.rd := 0.U
 
+    val jalResume  = Wire(init = (new GeneratedUJ()).fromBits(rocket.Instructions.JAL.value.U))
+    jalResume.setImm(RESUME - WHERETO)
+    jalResume.rd := 0.U
+
     when (goProgramBuffer) {
       whereToReg := jalProgBuf.asUInt()
+    }.elsewhen (goResume) {
+      whereToReg := jalResume.asUInt()
     }.elsewhen (goAbstract) {
       whereToReg := jalAbstract.asUInt()
     }
 
     val goReg            = Reg (init = false.B)
-    when (goProgramBuffer | goAbstract) {
+    when (goProgramBuffer | goResume | goAbstract) {
       goReg := true.B
     }.elsewhen (hartGoingWrEn){
       assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, 0.U)
@@ -932,6 +944,8 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
 
       when (wrAccessRegisterCommand || regAccessRegisterCommand) {
         ctrlStateNxt := CtrlState(CheckGenerate)
+      }.elsewhen(io.innerCtrl.fire() && io.innerCtrl.bits.resumereq) {
+        goResume := true.B
       }
     }.elsewhen (ctrlStateReg === CtrlState(CheckGenerate)){
 
@@ -1012,7 +1026,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
 // Wrapper around TL Debug Module Inner and an Async DMI Sink interface.
 // Handles the synchronization of dmactive, which is used as a synchronous reset
 // inside the Inner block.
-// Also is the Sink side of hartsel field of DMCONTROL.
+// Also is the Sink side of hartsel & resumereq fields of DMCONTROL.
 class TLDebugModuleInnerAsync(device: Device, getNComponents: () => Int)(implicit p: Parameters) extends LazyModule{
 
   val dmInner = LazyModule(new TLDebugModuleInner(device, getNComponents)(p))

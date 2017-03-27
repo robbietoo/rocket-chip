@@ -1,4 +1,4 @@
-// See LICENSE.SiFive for license details
+# See LICENSE.SiFive for license details
 # Recursive make is bad, but in this case we're cross compiling which is a
 # pretty unusual use case.
 

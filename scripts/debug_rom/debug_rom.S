@@ -23,7 +23,7 @@
 entry:
        jal zero, _entry
 resume:
-       nop // This is not used anymore. It is just here for compatibility for 'exception'
+       jal zero, _resume
 exception:
        jal zero, _exception
 
@@ -42,9 +42,6 @@ entry_loop:
         sw   s0, HALTED(zero)
         lb   s0, OK_GO(s0) // 1 byte flag per hart. Only one hart advances here.
         bne  zero, s0, going
-        csrr s0, CSR_DCSR  // Check whether the debug interrupt is still set. (TODO move to DSCRATCH1?)
-        andi s0, s0, DCSR_DEBUGINT
-        beq  zero, s0, _resume
         jal  zero, entry_loop
 
 _exception:
@@ -60,6 +57,7 @@ going:
                                        // intends.
 
 _resume:
+        csrw CSR_DSCRATCH, s0   // Save s0 to allow signaling MHARTID
         csrr s0, CSR_MHARTID
         sw   s0, RESUMING(zero) // Let the Debug Module know you're not halted anymore.
         csrr s0, CSR_DSCRATCH   // Restore s0
@@ -70,8 +68,8 @@ _resume:
 .section .whereto
 whereto:
         nop
-        // Variable "ROM" This is : jal x0 abstract or jal x0 program_buffer,
-        //                as desired.
+        // Variable "ROM" This is : jal x0 abstract, jal x0 program_buffer,
+        //                or jal x0 resume, as desired.
         //                Debug Module state machine tracks what is 'desired'.
         //                We don't need/want to use jalr here because all of the
         //                Variable ROM contents are set by

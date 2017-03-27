@@ -59,7 +59,7 @@ class DCSR extends Bundle {
   val stopcycle = Bool()
   val stoptime = Bool()
   val cause = UInt(width = 3)
-  // DEBUGINT is not in the Debug Spec, but is currently used in our ROM.
+  // TODO: debugint is not in the Debug Spec v13
   val debugint = Bool()
   val zero1 = UInt(width=2)
   val step = Bool()
