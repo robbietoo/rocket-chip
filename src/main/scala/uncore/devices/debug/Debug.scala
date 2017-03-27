@@ -501,7 +501,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     // Register & Wire Declarations (which need to be pre-declared)
     //--------------------------------------------------------------
 
-    val haltedBitRegs  = Reg(init=Vec.fill(nComponents){false.B})
+    val haltedBitRegs  = RegInit(Vec.fill(nComponents){false.B})
 
     // --- regmapper outputs
 
@@ -524,7 +524,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     // Registers coming from 'CONTROL' in Outer
     //--------------------------------------------------------------
 
-    val selectedHartReg = Reg(init = 0.U(10.W))
+    val selectedHartReg = RegInit(0.U(10.W))
 
     when (io.innerCtrl.fire()){
       selectedHartReg := io.innerCtrl.bits.hartsel
@@ -588,7 +588,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     ABSTRACTCSReset.datacount := cfg.nAbstractDataWords.U
     ABSTRACTCSReset.progsize := cfg.nProgramBufferWords.U
 
-    val ABSTRACTCSReg       = RegInit(ABSTRACTCSReset)
+    val ABSTRACTCSReg       = Reg(new ABSTRACTCSFields())
     val ABSTRACTCSWrDataVal = Wire(init = 0.U(32.W))
     val ABSTRACTCSWrData    = (new ABSTRACTCSFields()).fromBits(ABSTRACTCSWrDataVal)
     val ABSTRACTCSRdData    = Wire(init = ABSTRACTCSReg)
@@ -630,7 +630,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     //---- ABSTRACTAUTO
 
     val ABSTRACTAUTOReset     = Wire(init = (new ABSTRACTAUTOFields()).fromBits(0.U))
-    val ABSTRACTAUTOReg       = RegInit(ABSTRACTAUTOReset)
+    val ABSTRACTAUTOReg       = Reg(new ABSTRACTAUTOFields())
     val ABSTRACTAUTOWrDataVal = Wire(init = 0.U(32.W))
     val ABSTRACTAUTOWrData    = (new ABSTRACTAUTOFields()).fromBits(ABSTRACTAUTOWrDataVal)
     val ABSTRACTAUTORdData    = Wire(init = ABSTRACTAUTOReg)
@@ -667,7 +667,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     //---- COMMAND
 
     val COMMANDReset = Wire(init = (new COMMANDFields()).fromBits(0.U))
-    val COMMANDReg = RegInit(COMMANDReset)
+    val COMMANDReg = Reg(new COMMANDFields())
 
     val COMMANDWrDataVal    = Wire(init = 0.U(32.W))
     val COMMANDWrData       = Wire(init = (new COMMANDFields()).fromBits(COMMANDWrDataVal))
@@ -690,7 +690,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
 
     // These are byte addressible, s.t. the Processor can use
     // byte-addressible instructions to store to them.
-    val abstractDataMem       = RegInit(Vec.fill(cfg.nAbstractDataWords*4){0.U(8.W)})
+    val abstractDataMem       = Reg(Vec(cfg.nAbstractDataWords*4, UInt(8.W)))
     val abstractDataWords     = List.tabulate(cfg.nAbstractDataWords) { ii =>
       val slice = abstractDataMem.slice(ii * 4, (ii+1)*4)
       slice.reduce[UInt]{ case (x: UInt, y: UInt) => Cat(y, x)
@@ -698,7 +698,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     }
 
     // --- Program Buffer
-    val programBufferMem    = RegInit(Vec.fill(cfg.nProgramBufferWords*4){0.U(8.W)})
+    val programBufferMem    = Reg(Vec(cfg.nProgramBufferWords*4, UInt(8.W)))
 
     //--------------------------------------------------------------
     // These bits are implementation-specific bits set
@@ -707,15 +707,16 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
 
     for (component <- 0 until nComponents) {
       when (~io.dmactive) {
-        haltedBitRegs(component) := false.B}
-    }.otherwise {
-      when (hartHaltedWrEn) {
-        when (hartHaltedId === component.U) {
-          haltedBitRegs(component) := true.B
-        }
-      }.elsewhen (hartResumingWrEn) {
-        when (hartResumingId === component.U) {
-          haltedBitRegs(component) := false.B
+        haltedBitRegs(component) := false.B
+      }.otherwise {
+        when (hartHaltedWrEn) {
+          when (hartHaltedId === component.U) {
+            haltedBitRegs(component) := true.B
+          }
+        }.elsewhen (hartResumingWrEn) {
+          when (hartResumingId === component.U) {
+            haltedBitRegs(component) := false.B
+          }
         }
       }
     }
@@ -748,7 +749,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     val goResume        = Wire(init = false.B)
     val goAbstract      = Wire(init = false.B)
 
-    val whereToReg = RegInit(0.U(32.W))
+    val whereToReg = Reg(UInt(32.W))
 
     val jalProgBuf  = Wire(init = (new GeneratedUJ()).fromBits(rocket.Instructions.JAL.value.U))
     jalProgBuf.setImm(PROGBUF - WHERETO)
@@ -762,20 +763,29 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     jalResume.setImm(RESUME - WHERETO)
     jalResume.rd := 0.U
 
-    when (goProgramBuffer) {
-      whereToReg := jalProgBuf.asUInt()
-    }.elsewhen (goResume) {
-      whereToReg := jalResume.asUInt()
-    }.elsewhen (goAbstract) {
-      whereToReg := jalAbstract.asUInt()
+    when (~io.dmactive) {
+      whereToReg := 0.U
+    }.otherwise{
+      when (goProgramBuffer) {
+        whereToReg := jalProgBuf.asUInt()
+      }.elsewhen (goResume) {
+        whereToReg := jalResume.asUInt()
+      }.elsewhen (goAbstract) {
+        whereToReg := jalAbstract.asUInt()
+      }
     }
 
-    val goReg            = Reg (init = false.B)
-    when (goProgramBuffer | goResume | goAbstract) {
-      goReg := true.B
-    }.elsewhen (hartGoingWrEn){
-      assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, 0.U)
+    val goReg            = Reg(Bool())
+
+    when (~io.dmactive){
       goReg := false.B
+    }.otherwise {
+      when (goProgramBuffer | goResume | goAbstract) {
+        goReg := true.B
+      }.elsewhen (hartGoingWrEn){
+        assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, 0.U)
+        goReg := false.B
+      }
     }
 
     val goBytes = Wire(init = Vec.fill(nComponents){0.U(8.W)})
@@ -886,6 +896,12 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
       ABSTRACT    -> abstractGeneratedMem.map(x => RegField.r(32, x))
      )
 
+    // Override System Bus accesses with dmactive reset.
+    when (~io.dmactive){
+      abstractDataMem.foreach  {x => x := 0.U}
+      programBufferMem.foreach {x => x := 0.U}
+    }
+
     //--------------------------------------------------------------
     // Abstract Command State Machine
     //--------------------------------------------------------------
@@ -900,8 +916,9 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     }
     import CtrlState._
 
-    val ctrlStateReg = RegInit(CtrlState(Waiting))
-    
+    // This is not an initialization!
+    val ctrlStateReg = Reg(CtrlState(Waiting))
+
     val hartHalted   = haltedBitRegs(selectedHartReg)
     val ctrlStateNxt = Wire(init = ctrlStateReg)
 
