@@ -1,4 +1,3 @@
-// See LICENSE.SiFive for license details
 base_dir = $(abspath ..)
 
 CXXSRCS := comlog float_fix
