@@ -83,13 +83,11 @@ object DebugAbstractCommandError extends scala.Enumeration {
 }
 import DebugAbstractCommandError._
 
-
 object DebugAbstractCommandType extends scala.Enumeration {
   type DebugAbstractCommandType = Value
   val AccessRegister, QuickAccess  = Value
 }
 import DebugAbstractCommandType._
-
 
 /** Parameters exposed to the top-level design, set based on
   * external requirements, etc.
@@ -108,7 +106,6 @@ import DebugAbstractCommandType._
   *  supportQuickAccess : Whether or not to support the quick access command.
   *  supportHartArray : Whether or not to implement the hart array register.
   **/
-
 
 case class DebugModuleConfig (
   nDMIAddrSize  : Int,
@@ -139,8 +136,6 @@ case class DebugModuleConfig (
 
   require ((nDMIAddrSize >= 7) && (nDMIAddrSize <= 32))
 
-  private val maxComponents = 1024
-  
   require ((nAbstractDataWords  > 0)  && (nAbstractDataWords  <= 16))
   require ((nProgramBufferWords >= 0) && (nProgramBufferWords <= 16))
 
@@ -178,10 +173,8 @@ case object DMKey extends Field[DebugModuleConfig]
 // 
 // *****************************************
 
-
 /** Structure to define the contents of a Debug Bus Request
   */
-
 class DMIReq(addrBits : Int) extends Bundle {
   val addr = UInt(addrBits.W)
   val data = UInt(DMIConsts.dmiDataSize.W)
@@ -202,17 +195,25 @@ class DMIResp( ) extends Bundle {
   *  DebugModule is the consumer of this interface.
   *  Therefore it has the 'flipped' version of this.
   */
-
 class DMIIO(implicit val p: Parameters) extends ParameterizedBundle()(p) {
   val req = new  DecoupledIO(new DMIReq(p(DMKey).nDMIAddrSize))
   val resp = new DecoupledIO(new DMIResp).flip()
 }
 
-/* structure for synchronizing between the "Outer" and "Inner"
+/* structure for passing hartsel between the "Outer" and "Inner"
  */
 
 class DebugInternalBundle ()(implicit val p: Parameters) extends ParameterizedBundle()(p) {
   val hartsel = UInt(10.W)
+}
+
+/* structure for top-level Debug Module signals which aren't the bus interfaces.
+ */
+
+class DebugCtrlBundle (nComponents: Int)(implicit val p: Parameters) extends ParameterizedBundle()(p) {
+  val debugUnavail    = Vec(nComponents, Bool()).asInput
+  val ndreset         = Bool(OUTPUT)
+  val debugActive     = Bool(OUTPUT)
 }
 
 //*****************************************
@@ -226,36 +227,36 @@ class TLDebugModuleROM()(implicit p: Parameters) extends TLROM(
   contentsDelayed = DebugRomContents(),
   executable = true,
   beatBytes = p(XLen)/8,
-  resources = new SimpleDevice("debug_rom", Seq("sifive,debug-013")).reg)
+  resources = new SimpleDevice("debug_rom", Seq("sifive,debug-013")).reg
+)
 
 // *****************************************
 // Debug Module 
 // 
 // *****************************************
 
-class DebugCtrlBundle (nComponents: Int)(implicit val p: Parameters) extends ParameterizedBundle()(p) {
-  val debugUnavail    = Vec(nComponents, Bool()).asInput
-  val ndreset         = Bool(OUTPUT)
-  val debugActive     = Bool(OUTPUT)
-}
-
-
 /** Parameterized version of the Debug Module defined in the
   *  RISC-V Debug Specification 
   *  
-  *  DebugModule is a slave to two masters:
-  *    The Debug Bus (DMI) -- implemented as a generic Decoupled IO with request
-  *                           and response channels. Converted to TL within 'Outer',
-  *                           then synchronized within the top level and passed to 'Inner'.
+  *  DebugModule is a slave to two asynchronous masters:
+  *    The Debug Bus (DMI) -- This is driven by an external debugger
   *  
-  *    The System Bus -- implemented as a  RegisterRouter
+  *    The System Bus -- This services requests from the cores. Generally
+  *                      this interface should only be active at the request
+  *                      of the debugger, but the Debug Module may also 
+  *                      provide the default MTVEC since it is mapped
+  *                      to address 0x0.
   *  
-  *  DebugModule is responsible for control registers and RAM. ROM is in a seperate module.
-  *      to support debug interactions, as well as driving interrupts
-  *      to a configurable number of components in the system.
-  *      It must also maintain a state machine to track the state of harts
-  *      being debugged.
-  *      It is also responsible for some reset lines.
+  *  DebugModule is responsible for control registers and RAM. The Debug ROM is in a 
+  *  seperate module. It runs partially off of the dmiClk (e.g. TCK) and
+  *  the TL clock. Therefore, it is divided into "Outer" portion (running
+  *  of off dmiClock and dmiReset) and "Inner" (running off tlClock and tlReset).
+  *  This allows DMCONTROL.haltreq, hartsel, dmactive, and ndreset to be
+  *  modified even while the Core is in reset or not being clocked. 
+  *  Not all reads from the Debugger to the Debug Module will actually complete
+  *  in these scenarios either, they will just block until tlClock and tlReset
+  *  allow them to complete. This is not strictly necessary for 
+  *  proper debugger functionality.
   */
 
 // Local reg mapper function : Notify when written, but give the value as well.  
@@ -282,8 +283,6 @@ object RWNotify {
         ))
     }
 }
-
-
 
 class TLDebugModuleOuter(device: Device)(implicit p: Parameters) extends LazyModule {
 
@@ -316,10 +315,10 @@ class TLDebugModuleOuter(device: Device)(implicit p: Parameters) extends LazyMod
       val innerCtrl = new DecoupledIO(new DebugInternalBundle())
     }
 
-    //----DMCONTROL (The whole point of 'Outer' is to maintain this register on TCK domain, so that it
-    //               can be written even if 'Inner' is not being clocked or reset. This allows halting
+    //----DMCONTROL (The whole point of 'Outer' is to maintain this register on dmiClock (e.g. TCK) domain, so that it
+    //               can be written even if 'Inner' is not being clocked or is in reset. This allows halting
     //               harts while the rest of the system is in reset. It doesn't really allow any other
-    //               register accesses, which will keep returning 'busy' to the JTAG interface.
+    //               register accesses, which will keep returning 'busy' to the debugger interface.
 
     val DMCONTROLReset = Wire(init = (new DMCONTROLFields().fromBits(0.U)))
     val DMCONTROLNxt = Wire(init = new DMCONTROLFields().fromBits(0.U))
@@ -682,7 +681,6 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
       }
     }
 
-
     // --- Abstract Data
 
     // These are byte addressible, s.t. the Processor can use
@@ -716,10 +714,6 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
         }
       }
     }
-
-    //--------------------------------------------------------------
-    // Abstract Data Access (DMI ... System Bus can override)
-    //--------------------------------------------------------------
 
     //--------------------------------------------------------------
     // Program Buffer Access (DMI ... System Bus can override)
@@ -768,7 +762,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
     when (goProgramBuffer | goAbstract) {
       goReg := true.B
     }.elsewhen (hartGoingWrEn){
-      assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, selectedHartReg)
+      assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, 0.U)
       goReg := false.B
     }
 
@@ -896,14 +890,12 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
 
     val ctrlStateReg = RegInit(CtrlState(Waiting))
     
-    // Combo
     val hartHalted   = haltedBitRegs(selectedHartReg)
     val ctrlStateNxt = Wire(init = ctrlStateReg)
 
-
     //------------------------
-
     // DMI Register Control and Status
+
     abstractCommandBusy := (ctrlStateReg != CtrlState(Waiting))
 
     ABSTRACTCSWrEnLegal   := (ctrlStateReg === CtrlState(Waiting))
@@ -1091,7 +1083,6 @@ class TLDebugModule(implicit p: Parameters) extends LazyModule {
 
     io.ctrl <> dmOuter.module.io.ctrl
 
-
   }
 }
 
@@ -1150,5 +1141,6 @@ class DMIToTL(implicit p: Parameters) extends LazyModule {
     tl.b.ready := false.B
     tl.c.valid := false.B
     tl.e.valid := false.B
+
   }
 }
