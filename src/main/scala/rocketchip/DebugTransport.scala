@@ -122,10 +122,10 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
   // We stop being busy when we accept a response.
 
   when (io.dmi.req.valid) {
-    busyReg <= Bool(true)
+    busyReg := Bool(true)
   }
   when (io.dmi.resp.fire()) {
-    busyReg <= Bool(false)
+    busyReg := Bool(false)
   }
 
   // We are busy during a given CAPTURE
@@ -138,16 +138,16 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
   // Downgrade/Skip. We make the decision to downgrade or skip
   // during every CAPTURE_DR, and use the result in UPDATE_DR.
   // The sticky versions are reset by write to dmiReset in DTM_INFO.
-    when (dmiAccessChain.io.update.valid) {
-      skipOpReg := Bool(false)
-      downgradeOpReg := Bool(false)
-    }
-    when (dmiAccessChain.io.capture.capture) {
-      skipOpReg := busy
-      downgradeOpReg := (!busy & nonzeroResp)
-      stickyBusyReg := busy
-      stickyNonzeroRespReg <= nonzeroResp
-    }
+  when (dmiAccessChain.io.update.valid) {
+    skipOpReg := Bool(false)
+    downgradeOpReg := Bool(false)
+  }
+  when (dmiAccessChain.io.capture.capture) {
+    skipOpReg := busy
+    downgradeOpReg := (!busy & nonzeroResp)
+    stickyBusyReg := busy
+    stickyNonzeroRespReg := nonzeroResp
+  }
   when (dtmInfoChain.io.update.valid) {
     when (dtmInfoChain.io.update.bits.dmireset) {
       stickyNonzeroRespReg := Bool(false)
@@ -171,39 +171,39 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
   //--------------------------------------------------------
   // Debug Access Chain Implementation
 
-   dmiAccessChain.io.capture.bits := Mux(busy, busyResp, nonbusyResp)
-   when (dmiAccessChain.io.update.valid) {
-     skipOpReg := Bool(false)
-     downgradeOpReg := Bool(false)
-   }
-   when (dmiAccessChain.io.capture.capture) {
-       skipOpReg := busy
-       downgradeOpReg := (!busy & nonzeroResp)
-       stickyBusyReg := busy
-       stickyNonzeroRespReg <= nonzeroResp
-   }
+  dmiAccessChain.io.capture.bits := Mux(busy, busyResp, nonbusyResp)
+  when (dmiAccessChain.io.update.valid) {
+    skipOpReg := Bool(false)
+    downgradeOpReg := Bool(false)
+  }
+  when (dmiAccessChain.io.capture.capture) {
+    skipOpReg := busy
+    downgradeOpReg := (!busy & nonzeroResp)
+      stickyBusyReg := busy
+    stickyNonzeroRespReg := nonzeroResp
+  }
 
   //--------------------------------------------------------
   // Drive Ready Valid Interface
 
-   when (dmiAccessChain.io.update.valid) {
-     when (skipOpReg) {
-       // Do Nothing
-     }.otherwise {
-       when (downgradeOpReg) {
-         dmiReqReg.addr := UInt(0)
-         dmiReqReg.data := UInt(0)
-         dmiReqReg.op   := UInt(0)
-       }.otherwise {
-         dmiReqReg := dmiAccessChain.io.update.bits
-       }
-       dmiReqValidReg := Bool(true)
-     }
-   }.otherwise {
-     when (io.dmi.req.ready) {
-       dmiReqValidReg := Bool(false)
-     }
-   }
+  when (dmiAccessChain.io.update.valid) {
+    when (skipOpReg) {
+      // Do Nothing
+    }.otherwise {
+      when (downgradeOpReg) {
+        dmiReqReg.addr := UInt(0)
+        dmiReqReg.data := UInt(0)
+        dmiReqReg.op   := UInt(0)
+      }.otherwise {
+        dmiReqReg := dmiAccessChain.io.update.bits
+      }
+      dmiReqValidReg := Bool(true)
+    }
+  }.otherwise {
+    when (io.dmi.req.ready) {
+      dmiReqValidReg := Bool(false)
+    }
+  }
 
   io.dmi.resp.ready := dmiAccessChain.io.capture.capture
   io.dmi.req.valid := dmiReqValidReg
@@ -216,7 +216,7 @@ class DebugTransportModuleJTAG(debugAddrBits: Int, c: JtagDTMConfig)
 
   val tapIO = JtagTapGenerator(irLength = 5,
     instructions = Map(dtmJTAGAddrs.DMI_ACCESS -> dmiAccessChain,
-                       dtmJTAGAddrs.DTM_INFO   -> dtmInfoChain),
+      dtmJTAGAddrs.DTM_INFO   -> dtmInfoChain),
     idcode = Some((dtmJTAGAddrs.IDCODE, JtagIdcode(c.idcodeVersion, c.idcodePartNum, c.idcodeManufId))))
 
   tapIO.jtag <> io.jtag
