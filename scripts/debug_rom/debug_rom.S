@@ -1,11 +1,11 @@
 #include "spike/encoding.h"
 
 	// These are implementation-specific addresses in the Debug Module
-	// Probably we don't need them all to be seperate.
 #define HALTED    0x100
 #define GOING     0x104
 #define RESUMING  0x108
 #define EXCEPTION 0x10C
+        
         
 // Region of memory where each hart has 1
 // byte to read.
@@ -22,34 +22,33 @@
 entry:
        jal zero, _entry
 resume:
-       jal zero, _resume
+       nop // This is not used anymore. It is just here for compatibility for 'exception'
 exception: 
        jal zero, _exception
 
 _entry:
         // This fence is required because the execution may have written something
-        // into the Abstract Data or Program Buffer registers. The write to 'HALTED'
-        // is used to advance the state machine.
+        // into the Abstract Data or Program Buffer registers.
         fence
 	csrw CSR_DSCRATCH, s0  // Save s0 to allow signaling MHARTID
 
         // We continue to let the hart know that we are halted in order that
         // a DM which was reset is still made aware that a hart is halted.
+        // We keep checking both whether there is something the debugger wants
+        // us to do, or whether we should not be halted anymore.
 entry_loop:
 	csrr s0, CSR_MHARTID  
 	sw   s0, HALTED(zero)
-	lb   s0, OK_GO(s0) // 1 byte flag per hart. Only one hart advances.
+	lb   s0, OK_GO(s0) // 1 byte flag per hart. Only one hart advances here.
 	bne  zero, s0, going
+        csrr s0, CSR_DCSR  // Check whether the debug interrupt is still set. (TODO move to DSCRATCH1?)
+        andi s0, s0, DCSR_DEBUGINT
+        beq  zero, s0, _resume 
 	jal  zero, entry_loop
-
 
 _exception:
         sw      zero, EXCEPTION(zero) // Let debug module know you got an exception.
         ebreak
-
-// Below here, some portions are "Variable ROM". From the processor's perspective,
-// it is ROM in that it cannot be written. But the Debug Module can change some of 
-// the "ROM" contents as needed.
 
 going:
 	csrr s0, CSR_DSCRATCH          // Restore s0 here
@@ -59,38 +58,20 @@ going:
 			               // remainder of the variable instructions will be what Debug Module
 	                               // intends.
 
-        
 _resume:
-        csrw CSR_DSCRATCH, s0   // Save s0 to allow signaling MHARTID
 	csrr s0, CSR_MHARTID  
         sw   s0, RESUMING(zero) // Let the Debug Module know you're not halted anymore.
         csrr s0, CSR_DSCRATCH   // Restore s0
         dret
 
-        // END OF ACTUAL "ROM" CONTENTS. BELOW ARE JUST TO MAKE IT SO I DON'T HAVE TO MANUALLY
-        // ASSEMBLE CODE THAT THE HW WILL PRODUCE.
+        // END OF ACTUAL "ROM" CONTENTS. BELOW IS JUST FOR LINKER SCRIPT.
 
 .section .whereto
 whereto:        
         nop     
-        // Variable "ROM" This is : jal x0 abstract, jal x0 program_buffer, 
-	//                or jal x0 resume, as desired.	
+        // Variable "ROM" This is : jal x0 abstract or jal x0 program_buffer, 
+	//                as desired.	
 	//                Debug Module state machine tracks what is 'desired'.
 	//                We don't need/want to use jalr here because all of the 
 	//                Variable ROM contents are set by 
 	//                Debug Module before setting the OK_GO byte.
-
-        
-.section .abstract
-abstract:
-	nop                 // Variable "ROM" These are replaced by Debug Module with the instructions needed 
-	nop                 //                to implement the abstract GPR access commands.
-	
-  	ebreak              // Signal completion by going back to hart_N_entry.
-
-.section .prog_buffer
-prog_buffer:
-	nop	            // Variable "ROM" These are written directly by the debugger.
-	nop	            // Variable "ROM"
-	nop
-	ebreak              // Variable "ROM" This is required to be written by the debugger.
