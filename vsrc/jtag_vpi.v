@@ -50,7 +50,7 @@ module JTAGVPI
 	output jtag_TDI,
 	input  jtag_TDO_data,
         input  jtag_TDO_driven,
- 
+
 	input  enable,
 	input  init_done);
 
