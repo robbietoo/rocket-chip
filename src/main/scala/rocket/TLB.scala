@@ -103,7 +103,6 @@ class TLB(lgMaxSize: Int, nEntries: Int)(implicit edge: TLEdgeOut, p: Parameters
   val cacheable = fastCheck(_.supportsAcquireB)
   val isSpecial = !io.ptw.resp.bits.homogeneous
 
-
   val lookup_tag = Cat(io.ptw.ptbr.asid, vpn(vpnBits-1,0))
   val hitsVec = (0 until totalEntries).map { i => vm_enabled && {
     var tagMatch = valid(i)
@@ -113,7 +112,6 @@ class TLB(lgMaxSize: Int, nEntries: Int)(implicit edge: TLEdgeOut, p: Parameters
     }
     tagMatch
   }} :+ !vm_enabled
-
   val hits = hitsVec.asUInt
   val level = Mux1H(hitsVec.init, entries.map(_.level))
   val partialPPN = Mux1H(hitsVec.init, entries.map(_.ppn))
