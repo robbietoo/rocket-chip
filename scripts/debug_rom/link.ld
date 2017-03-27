@@ -1,3 +1,4 @@
+// See LICENSE.SiFive for license details.
 OUTPUT_ARCH( "riscv" )
 ENTRY( entry )
 SECTIONS

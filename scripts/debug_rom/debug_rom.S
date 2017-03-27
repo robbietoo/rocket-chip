@@ -1,3 +1,5 @@
+// See LICENSE.SiFive for license details.
+
 #include "spike/encoding.h"
 
 // These are implementation-specific addresses in the Debug Module
