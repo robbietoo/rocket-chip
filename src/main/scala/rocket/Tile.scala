@@ -164,6 +164,10 @@ class SyncRocketTile(rtp: RocketTileParams, hartid: Int)(implicit p: Parameters)
   rocket.slaveNode :*= slaveNode
 
   val intNode = IntInputNode()
+
+  // Some interrupt sources may be completely asynchronous, even
+  // if tlClk and coreClk are the same (e.g. Debug Interrupt, which
+  // is coming directly from e.g. TCK)
   val xing = LazyModule(new IntXing(3))
   rocket.intNode := xing.intnode
   xing.intnode := intNode

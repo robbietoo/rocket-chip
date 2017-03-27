@@ -230,8 +230,7 @@ class TLDebugModuleROM()(implicit p: Parameters) extends TLROM(
   contentsDelayed = DebugRomContents(),
   executable = true,
   beatBytes = p(XLen)/8,
-  name = "debug_rom",
-  devcompat = Seq("sifive,debug-013"))
+  resources = new SimpleDevice("debug_rom", Seq("sifive,debug-013")).reg)
 
 // *****************************************
 // Debug Module 
