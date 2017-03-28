@@ -783,7 +783,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
       when (goProgramBuffer | goResume | goAbstract) {
         goReg := true.B
       }.elsewhen (hartGoingWrEn){
-        assert(hartGoingId === 0.U, "Unexpected 'GOING' hart: %x, expected %x", hartGoingId, 0.U)
+        assert(hartGoingId === 0.U, "Unexpected 'GOING' hart.")//Chisel3 #540 %x, expected %x", hartGoingId, 0.U)
         goReg := false.B
       }
     }
@@ -995,7 +995,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
         goAbstract := true.B
       }
       when(hartExceptionWrEn) {
-        assert(hartExceptionId === 0.U,  "Unexpected 'EXCEPTION' hart, %x, expected %x", hartExceptionId, 0.U)
+        assert(hartExceptionId === 0.U,  "Unexpected 'EXCEPTION' hart")// Chisel3 #540, %x, expected %x", hartExceptionId, 0.U)
         ctrlStateNxt := CtrlState(Waiting)
         errorException := true.B
       }
@@ -1013,7 +1013,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
         }
       }
       when(hartExceptionWrEn) {
-        assert(hartExceptionId === 0.U, "Unexpected 'EXCEPTION' hart, %x, expected %x", hartExceptionId, selectedHartReg)
+        assert(hartExceptionId === 0.U, "Unexpected 'EXCEPTION' hart")//Chisel3 #540 %x, expected %x", hartExceptionId, selectedHartReg)
         ctrlStateNxt := CtrlState(Waiting)
         errorUnsupported := true.B
       }
@@ -1026,7 +1026,7 @@ class TLDebugModuleInner(device: Device, getNComponents: () => Int)(implicit p: 
         ctrlStateNxt := CtrlState(Waiting)
       }
       when(hartExceptionWrEn) {
-        assert(hartExceptionId === 0.U, "Unexpected 'EXCEPTION' hart, %x, expected %x", hartExceptionId, 0.U)
+        assert(hartExceptionId === 0.U, "Unexpected 'EXCEPTION' hart")//Chisel3 #540, %x, expected %x", hartExceptionId, 0.U)
         ctrlStateNxt := CtrlState(Waiting)
         errorException := true.B
       }
